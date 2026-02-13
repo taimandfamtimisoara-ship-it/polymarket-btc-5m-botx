@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚡ BTC 5m Bot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0a0e27 100%);
+            color: #e0e6ed;
+            padding: 20px;
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        /* Animated background gradient */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(96, 165, 250, 0.1) 0%, transparent 50%);
+            animation: rotate 20s linear infinite;
+            pointer-events: none;
+        }
+        
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid rgba(96, 165, 250, 0.3);
+            animation: slideDown 0.6s ease;
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        h1 {
+            font-size: 3rem;
+            background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+            animation: glow 3s ease-in-out infinite;
+        }
+        
+        @keyframes glow {
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.3); }
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 25px;
+            font-size: 1rem;
+            font-weight: 600;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        .status.online {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+        
+        .status.offline {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        
+        /* BOT LIFE METER */
+        .life-meter {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 2px solid rgba(96, 165, 250, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            animation: fadeIn 0.6s ease;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .life-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .life-title {
+            font-size: 1.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #10b981, #059669);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .bot-emoji {
+            font-size: 3rem;
+            animation: bounce 2s ease-in-out infinite;
+        }
+        
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            25% { transform: translateY(-10px) rotate(-5deg); }
+            75% { transform: translateY(-10px) rotate(5deg); }
+        }
+        
+        .life-bar-container {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+            height: 60px;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 20px;
+            border: 2px solid rgba(96, 165, 250, 0.2);
+        }
+        
+        .life-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #10b981, #34d399, #6ee7b7);
+            border-radius: 18px;
+            transition: width 0.5s ease, background 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .life-bar.critical {
+            background: linear-gradient(90deg, #ef4444, #f87171);
+            animation: shake 0.5s ease-in-out infinite;
+        }
+        
+        .life-bar.warning {
+            background: linear-gradient(90deg, #f59e0b, #fbbf24);
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        
+        .life-bar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            animation: shimmer 2s linear infinite;
+        }
+        
+        @keyframes shimmer {
+            to { left: 100%; }
+        }
+        
+        .life-percentage {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: white;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+            z-index: 10;
+        }
+        
+        .life-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .life-stat {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 12px;
+            border: 1px solid rgba(96, 165, 250, 0.2);
+        }
+        
+        .life-stat-label {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        
+        .life-stat-value {
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+        
+        .life-stat-value.positive {
+            color: #10b981;
+        }
+        
+        .life-stat-value.negative {
+            color: #ef4444;
+        }
+        
+        .bot-message {
+            background: rgba(96, 165, 250, 0.1);
+            border-left: 4px solid #60a5fa;
+            padding: 15px 20px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-style: italic;
+            color: #60a5fa;
+            animation: fadeIn 0.5s ease;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 25px;
+            border: 1px solid rgba(96, 165, 250, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+            animation: fadeIn 0.6s ease;
+            animation-fill-mode: both;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.1), transparent);
+            transition: left 0.5s;
+        }
+        
+        .card:hover::before {
+            left: 100%;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(96, 165, 250, 0.5);
+            box-shadow: 0 12px 48px rgba(96, 165, 250, 0.2);
+        }
+        
+        .card:nth-child(1) { animation-delay: 0.1s; }
+        .card:nth-child(2) { animation-delay: 0.2s; }
+        .card:nth-child(3) { animation-delay: 0.3s; }
+        .card:nth-child(4) { animation-delay: 0.4s; }
+        
+        .card-icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            display: inline-block;
+        }
+        
+        .card-title {
+            font-size: 0.9rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+        
+        .card-value {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            transition: all 0.3s ease;
+        }
+        
+        .card-value.flash {
+            animation: flash 0.5s ease;
+        }
+        
+        @keyframes flash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; transform: scale(1.1); }
+        }
+        
+        .card-subtitle {
+            font-size: 0.9rem;
+            color: #64748b;
+            margin-top: 8px;
+        }
+        
+        .positions-table {
+            width: 100%;
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(96, 165, 250, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            animation: fadeIn 0.6s ease 0.5s both;
+        }
+        
+        .positions-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .positions-header h2 {
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-size: 1.5rem;
+        }
+        
+        .position-count {
+            background: rgba(96, 165, 250, 0.2);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            color: #60a5fa;
+            font-weight: 600;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th {
+            text-align: left;
+            padding: 15px;
+            color: #94a3b8;
+            font-weight: 700;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 2px solid rgba(96, 165, 250, 0.3);
+        }
+        
+        td {
+            padding: 15px;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+            transition: all 0.3s ease;
+        }
+        
+        tr:hover td {
+            background: rgba(96, 165, 250, 0.05);
+        }
+        
+        tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 16px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        
+        .badge.yes {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+        
+        .badge.no {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+        }
+        
+        .positive {
+            color: #10b981;
+            font-weight: 700;
+        }
+        
+        .negative {
+            color: #ef4444;
+            font-weight: 700;
+        }
+        
+        .last-updated {
+            text-align: center;
+            color: #64748b;
+            font-size: 0.9rem;
+            margin-top: 30px;
+            animation: fadeIn 0.6s ease 0.6s both;
+        }
+        
+        .rocket {
+            display: inline-block;
+            animation: rocket 2s ease-in-out infinite;
+        }
+        
+        @keyframes rocket {
+            0%, 100% { transform: translateY(0) rotate(45deg); }
+            50% { transform: translateY(-10px) rotate(45deg); }
+        }
+        
+        /* Mobile responsive */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .card-value {
+                font-size: 2rem;
+            }
+            
+            table {
+                font-size: 0.85rem;
+            }
+            
+            th, td {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚡ BTC 5-Minute Bot <span class="rocket">🚀</span></h1>
+            <span class="status" id="status">●Connecting...</span>
+        </header>
+        
+        <!-- BOT LIFE METER -->
+        <div class="life-meter">
+            <div class="life-header">
+                <h2 class="life-title">🤖 Bot Survival Status</h2>
+                <div class="bot-emoji" id="bot-emoji">🤖</div>
+            </div>
+            
+            <div class="life-bar-container">
+                <div class="life-bar" id="life-bar" style="width: 100%;">
+                    <div class="life-percentage" id="life-percentage">100%</div>
+                </div>
+            </div>
+            
+            <div class="life-stats">
+                <div class="life-stat">
+                    <div class="life-stat-label">💰 Total Profit</div>
+                    <div class="life-stat-value positive" id="total-profit">+$0.00</div>
+                </div>
+                <div class="life-stat">
+                    <div class="life-stat-label">💸 API Costs</div>
+                    <div class="life-stat-value negative" id="api-costs">-$0.00</div>
+                </div>
+                <div class="life-stat">
+                    <div class="life-stat-label">📊 Trading Fees</div>
+                    <div class="life-stat-value negative" id="trading-fees">-$0.00</div>
+                </div>
+                <div class="life-stat">
+                    <div class="life-stat-label">⚡ Net Profit</div>
+                    <div class="life-stat-value" id="net-profit">$0.00</div>
+                </div>
+            </div>
+            
+            <div class="bot-message" id="bot-message">
+                🤖 "Just woke up! Ready to hunt some 5-minute opportunities..."
+            </div>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <div class="card-icon">💰</div>
+                <div class="card-title">BTC Price</div>
+                <div class="card-value" id="btc-price">--</div>
+                <div class="card-subtitle">⚡ Latency: <span id="feed-latency">--</span>ms</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-icon">📊</div>
+                <div class="card-title">Active Positions</div>
+                <div class="card-value" id="active-positions">0</div>
+                <div class="card-subtitle">🎯 Max: 10</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-icon">🎯</div>
+                <div class="card-title">Edges Detected</div>
+                <div class="card-value" id="edges-detected">0</div>
+                <div class="card-subtitle">🔍 Opportunities found</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-icon">✨</div>
+                <div class="card-title">Orders Executed</div>
+                <div class="card-value" id="orders-executed">0</div>
+                <div class="card-subtitle">⚡ Avg: <span id="avg-execution">--</span>ms</div>
+            </div>
+        </div>
+        
+        <div class="positions-table">
+            <div class="positions-header">
+                <h2>🔥 Open Positions</h2>
+                <span class="position-count" id="position-count">0 positions</span>
+            </div>
+            <table id="positions-table">
+                <thead>
+                    <tr>
+                        <th>Market</th>
+                        <th>Side</th>
+                        <th>Size</th>
+                        <th>Edge</th>
+                        <th>Entry</th>
+                        <th>Current</th>
+                        <th>Time</th>
+                        <th>PnL</th>
+                    </tr>
+                </thead>
+                <tbody id="positions-body">
+                    <tr>
+                        <td colspan="8" style="text-align: center; color: #64748b; padding: 40px; font-size: 1.1rem;">
+                            🎲 No active positions yet... waiting for opportunities!
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="last-updated">
+            🕐 Last updated: <span id="last-updated">--</span>
+        </div>
+    </div>
+    
+    <script>
+        const API_URL = 'http://localhost:8000/api';
+        const UPDATE_INTERVAL = 500;
+        
+        // Simulated data (remove when API is live)
+        let simulatedProfit = 0;
+        let simulatedCosts = 0;
+        let simulatedFees = 0;
+        
+        let previousValues = {
+            price: null,
+            positions: null,
+            edges: null,
+            orders: null
+        };
+        
+        function getBotMessage(lifePercent, netProfit) {
+            if (lifePercent >= 90) {
+                const messages = [
+                    "💪 'Feeling STRONG! These 5-minute markets are EASY!'",
+                    "🚀 'TO THE MOON! More opportunities please!'",
+                    "😎 'Life is good when the markets are mispriced!'",
+                    "🎯 'Crushing it! This is what I was built for!'",
+                    "🔥 'UNSTOPPABLE! Keep those edges coming!'"
+                ];
+                return messages[Math.floor(Math.random() * messages.length)];
+            } else if (lifePercent >= 70) {
+                const messages = [
+                    "😊 'Doing well! Costs are under control.'",
+                    "👍 'Solid profit margins. I can survive on this!'",
+                    "💚 'Healthy and thriving! Keep it up!'",
+                    "🎉 'Not bad at all! Profitable bot is a happy bot!'"
+                ];
+                return messages[Math.floor(Math.random() * messages.length)];
+            } else if (lifePercent >= 40) {
+                const messages = [
+                    "😬 'API costs eating into profits... need bigger wins!'",
+                    "⚠️ 'Survival mode activated. Need more edges!'",
+                    "😰 'Getting tight... these fees add up fast!'",
+                    "🤔 'Hmm, profitability is shaky. Need better opportunities!'"
+                ];
+                return messages[Math.floor(Math.random() * messages.length)];
+            } else if (lifePercent >= 20) {
+                const messages = [
+                    "😨 'CRITICAL! Costs are killing me! Need wins NOW!'",
+                    "🚨 'DANGER ZONE! Barely surviving on these margins!'",
+                    "😱 'Help! API costs > profits! This is unsustainable!'",
+                    "💀 'Life support mode! One bad trade and I'm done!'"
+                ];
+                return messages[Math.floor(Math.random() * messages.length)];
+            } else {
+                const messages = [
+                    "☠️ 'I'm dying... costs destroyed me... send help...'",
+                    "💀 'This is the end... too expensive to stay alive...'",
+                    "😵 'Can't... survive... API bills too high...'",
+                    "🪦 'RIP Bot 2024-2024. Killed by AWS bills.'"
+                ];
+                return messages[Math.floor(Math.random() * messages.length)];
+            }
+        }
+        
+        function updateLifeMeter() {
+            // Simulate costs accumulating (remove when API is live)
+            simulatedCosts += 0.01; // $0.01 per update cycle
+            simulatedFees += 0.005; // $0.005 per update cycle
+            
+            // Simulate occasional profits (remove when API is live)
+            if (Math.random() > 0.9) {
+                simulatedProfit += Math.random() * 5; // Random profit $0-5
+            }
+            
+            const totalCosts = simulatedCosts + simulatedFees;
+            const netProfit = simulatedProfit - totalCosts;
+            
+            // Calculate life percentage (100% = fully funded, 0% = broke)
+            // Formula: life = 100 + (net profit / 10) - capped at 0-100
+            let lifePercent = 100 + (netProfit * 2); // 2% per dollar net
+            lifePercent = Math.max(0, Math.min(100, lifePercent));
+            
+            // Update UI
+            document.getElementById('total-profit').textContent = 
+                `+$${simulatedProfit.toFixed(2)}`;
+            document.getElementById('api-costs').textContent = 
+                `-$${simulatedCosts.toFixed(2)}`;
+            document.getElementById('trading-fees').textContent = 
+                `-$${simulatedFees.toFixed(2)}`;
+            
+            const netEl = document.getElementById('net-profit');
+            netEl.textContent = `${netProfit >= 0 ? '+' : ''}$${netProfit.toFixed(2)}`;
+            netEl.className = `life-stat-value ${netProfit >= 0 ? 'positive' : 'negative'}`;
+            
+            // Update life bar
+            const lifeBar = document.getElementById('life-bar');
+            lifeBar.style.width = `${lifePercent}%`;
+            
+            // Change color based on health
+            if (lifePercent < 20) {
+                lifeBar.className = 'life-bar critical';
+            } else if (lifePercent < 50) {
+                lifeBar.className = 'life-bar warning';
+            } else {
+                lifeBar.className = 'life-bar';
+            }
+            
+            document.getElementById('life-percentage').textContent = 
+                `${Math.round(lifePercent)}%`;
+            
+            // Update bot emoji
+            const botEmoji = document.getElementById('bot-emoji');
+            if (lifePercent >= 80) {
+                botEmoji.textContent = '🤖💪';
+            } else if (lifePercent >= 60) {
+                botEmoji.textContent = '🤖😊';
+            } else if (lifePercent >= 40) {
+                botEmoji.textContent = '🤖😬';
+            } else if (lifePercent >= 20) {
+                botEmoji.textContent = '🤖😰';
+            } else {
+                botEmoji.textContent = '🤖💀';
+            }
+            
+            // Update message
+            document.getElementById('bot-message').textContent = 
+                getBotMessage(lifePercent, netProfit);
+        }
+        
+        async function updateDashboard() {
+            try {
+                const statsRes = await fetch(`${API_URL}/stats`);
+                const stats = await statsRes.json();
+                
+                // Status
+                const statusEl = document.getElementById('status');
+                if (stats.feed_connected) {
+                    statusEl.className = 'status online';
+                    statusEl.textContent = '● Online';
+                } else {
+                    statusEl.className = 'status offline';
+                    statusEl.textContent = '● Offline';
+                }
+                
+                // BTC Price
+                const priceEl = document.getElementById('btc-price');
+                const newPrice = stats.current_price;
+                if (newPrice && newPrice !== previousValues.price) {
+                    priceEl.classList.add('flash');
+                    setTimeout(() => priceEl.classList.remove('flash'), 500);
+                    previousValues.price = newPrice;
+                }
+                priceEl.textContent = newPrice ? `$${newPrice.toLocaleString()}` : '--';
+                
+                document.getElementById('feed-latency').textContent = 
+                    stats.feed_latency_ms ? Math.round(stats.feed_latency_ms) : '--';
+                
+                // Stats
+                const posEl = document.getElementById('active-positions');
+                const newPosCount = stats.active_positions || 0;
+                if (newPosCount !== previousValues.positions) {
+                    posEl.classList.add('flash');
+                    setTimeout(() => posEl.classList.remove('flash'), 500);
+                    previousValues.positions = newPosCount;
+                }
+                posEl.textContent = newPosCount;
+                
+                const edgesEl = document.getElementById('edges-detected');
+                const newEdges = stats.edges_detected || 0;
+                if (newEdges !== previousValues.edges) {
+                    edgesEl.classList.add('flash');
+                    setTimeout(() => edgesEl.classList.remove('flash'), 500);
+                    previousValues.edges = newEdges;
+                }
+                edgesEl.textContent = newEdges;
+                
+                const ordersEl = document.getElementById('orders-executed');
+                const newOrders = stats.orders_executed || 0;
+                if (newOrders !== previousValues.orders) {
+                    ordersEl.classList.add('flash');
+                    setTimeout(() => ordersEl.classList.remove('flash'), 500);
+                    previousValues.orders = newOrders;
+                }
+                ordersEl.textContent = newOrders;
+                
+                document.getElementById('avg-execution').textContent = 
+                    stats.avg_execution_time_ms ? Math.round(stats.avg_execution_time_ms) : '--';
+                
+                // Positions
+                const positionsRes = await fetch(`${API_URL}/positions`);
+                const positions = await positionsRes.json();
+                
+                document.getElementById('position-count').textContent = 
+                    `${positions.count} position${positions.count !== 1 ? 's' : ''}`;
+                
+                const tbody = document.getElementById('positions-body');
+                
+                if (positions.count === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="8" style="text-align: center; color: #64748b; padding: 40px; font-size: 1.1rem;">
+                                🎲 No active positions yet... waiting for opportunities!
+                            </td>
+                        </tr>
+                    `;
+                } else {
+                    tbody.innerHTML = positions.positions.map(pos => `
+                        <tr>
+                            <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">
+                                ${pos.question}
+                            </td>
+                            <td>
+                                <span class="badge ${pos.direction.toLowerCase()}">
+                                    ${pos.direction === 'YES' ? '📈' : '📉'} ${pos.direction}
+                                </span>
+                            </td>
+                            <td><strong>$${pos.size.toFixed(2)}</strong></td>
+                            <td class="positive">+${pos.edge_pct.toFixed(2)}%</td>
+                            <td>$${pos.entry_btc_price.toLocaleString()}</td>
+                            <td>$${pos.current_btc_price ? pos.current_btc_price.toLocaleString() : '--'}</td>
+                            <td>${formatTime(pos.time_held_seconds)}</td>
+                            <td class="${pos.pnl >= 0 ? 'positive' : 'negative'}">
+                                ${pos.pnl >= 0 ? '🚀 +' : '📉 '}$${Math.abs(pos.pnl).toFixed(2)}
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+                
+                // Timestamp
+                const now = new Date();
+                document.getElementById('last-updated').textContent = now.toLocaleTimeString();
+                
+            } catch (error) {
+                console.error('Dashboard update failed:', error);
+                document.getElementById('status').className = 'status offline';
+                document.getElementById('status').textContent = '● Error';
+            }
+            
+            // Update life meter
+            updateLifeMeter();
+        }
+        
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        // Start
+        updateDashboard();
+        setInterval(updateDashboard, UPDATE_INTERVAL);
+    </script>
+</body>
+</html>
