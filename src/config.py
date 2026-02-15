@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     # Environment
     environment: str = Field("paper", alias="ENVIRONMENT")  # paper or live
     
-    # Polygon Wallet
-    polygon_wallet_private_key: str = Field(..., alias="POLYGON_WALLET_PRIVATE_KEY")
+    # Polygon Wallet (optional for paper trading)
+    polygon_wallet_private_key: str = Field("0x0000000000000000000000000000000000000000000000000000000000000001", alias="POLYGON_WALLET_PRIVATE_KEY")
     polymarket_funder_address: Optional[str] = Field(None, alias="POLYMARKET_FUNDER_ADDRESS")
     
     # Anthropic (optional - for market analysis)
