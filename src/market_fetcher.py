@@ -124,76 +124,76 @@ class MarketFetcher:
     
     async def _fetch_from_gamma_api(self) -> List[Dict]:
         """
-        Fetch markets from Gamma Markets API (ASYNC - non-blocking).
+        Fetch markets from Gamma/Strapi API (ASYNC - non-blocking).
         
-        Returns raw market data with metadata.
+        Tries multiple endpoints to find BTC markets.
         """
         try:
             # Rate limit: market fetching
             limiter = get_rate_limiter()
             await limiter.acquire_market()
             
-            # Gamma API endpoint - try events endpoint which has better data
-            url = f"{self.GAMMA_API_BASE}/events"
-            
-            # Simplified params - Gamma API is picky
-            params = {
-                'closed': 'false',
-                'active': 'true',
-                'limit': 50
-            }
-            
             session = await get_http_session()
-            async with session.get(url, params=params) as response:
-                # Handle 429 rate limit responses
-                if response.status == 429:
-                    limiter.handle_429("gamma_markets")
-                    logger.warning("gamma_api_rate_limited")
-                    return []
-                
-                # Log detailed error for non-200
-                if response.status != 200:
-                    text = await response.text()
-                    logger.warning("gamma_api_http_error", status=response.status, body=text[:200])
-                    return []
-                
-                limiter.reset_backoff()  # Success - reset backoff
-                
-                data = await response.json()
             
-            # Events API returns events with nested markets
-            events = data if isinstance(data, list) else data.get('data', [])
+            # Try Strapi markets endpoint with BTC search
+            endpoints = [
+                (f"{self.GAMMA_API_BASE}/markets", {'closed': 'false', 'limit': 100, '_limit': 100}),
+                (f"{self.GAMMA_API_BASE}/events", {'closed': 'false', 'active': 'true', 'limit': 50}),
+                ("https://strapi-matic.poly.market/markets", {'closed': 'false', '_limit': 100}),
+            ]
             
-            # Extract markets from events and flatten
-            markets = []
-            for event in events:
-                # Events have 'markets' array
-                event_markets = event.get('markets', [])
-                for market in event_markets:
-                    # Add event title for context
-                    market['event_title'] = event.get('title', '')
-                    markets.append(market)
+            for url, params in endpoints:
+                try:
+                    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            items = data if isinstance(data, list) else data.get('data', [])
+                            
+                            if items:
+                                logger.info("gamma_api_endpoint_success", url=url[:50], count=len(items))
+                                # Log a sample
+                                sample = items[0]
+                                logger.warning("gamma_sample", 
+                                    keys=str(list(sample.keys())[:8]),
+                                    q=str(sample.get('question', sample.get('title', '')))[:60]
+                                )
+                                limiter.reset_backoff()
+                                return self._process_gamma_data(items, url)
+                        else:
+                            logger.debug("gamma_endpoint_failed", url=url[:50], status=response.status)
+                except Exception as e:
+                    logger.debug("gamma_endpoint_error", url=url[:50], error=str(e)[:50])
+                    continue
             
-            # Log sample to debug
-            if markets:
-                sample = markets[0]
-                logger.warning("gamma_market_sample", 
-                    question=str(sample.get('question', ''))[:80],
-                    event=str(sample.get('event_title', ''))[:50]
-                )
-            
-            # Filter for BTC 5-minute markets
-            btc_5m_markets = []
-            for market in markets:
-                if self._is_btc_5m_market(market):
-                    btc_5m_markets.append(market)
-            
-            logger.info("gamma_api_success", total_events=len(events), total_markets=len(markets), btc_5m=len(btc_5m_markets))
-            return btc_5m_markets
+            return []
             
         except Exception as e:
             logger.warning("gamma_api_error", error=str(e))
             return []
+    
+    def _process_gamma_data(self, items: List[Dict], source_url: str) -> List[Dict]:
+        """Process data from Gamma/Strapi API, handling different formats."""
+        markets = []
+        
+        # Check if these are events (with nested markets) or direct markets
+        if items and 'markets' in items[0]:
+            # Events format - flatten
+            for event in items:
+                for market in event.get('markets', []):
+                    market['event_title'] = event.get('title', '')
+                    markets.append(market)
+        else:
+            # Direct markets format
+            markets = items
+        
+        # Filter for BTC 5-minute markets
+        btc_5m_markets = []
+        for market in markets:
+            if self._is_btc_5m_market(market):
+                btc_5m_markets.append(market)
+        
+        logger.info("gamma_processed", source=source_url[:30], total=len(markets), btc_5m=len(btc_5m_markets))
+        return btc_5m_markets
     
     async def _fetch_from_clob_api(self) -> List[Dict]:
         """
