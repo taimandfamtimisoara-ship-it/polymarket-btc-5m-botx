@@ -135,8 +135,14 @@ class MarketFetcher:
             
             session = await get_http_session()
             
-            # Try Strapi markets endpoint with BTC search
+            # Try multiple endpoints - prioritize BTC 5M specific searches
             endpoints = [
+                # Search for BTC 5-minute markets specifically
+                (f"{self.GAMMA_API_BASE}/events", {'slug_contains': 'btc-updown-5m', 'closed': 'false', 'active': 'true', 'limit': 50}),
+                (f"{self.GAMMA_API_BASE}/markets", {'slug_contains': 'btc-updown-5m', 'closed': 'false', 'limit': 100}),
+                # Crypto category
+                (f"{self.GAMMA_API_BASE}/events", {'tag': 'crypto', 'closed': 'false', 'active': 'true', 'limit': 100}),
+                # General search fallback
                 (f"{self.GAMMA_API_BASE}/markets", {'closed': 'false', 'limit': 100, '_limit': 100}),
                 (f"{self.GAMMA_API_BASE}/events", {'closed': 'false', 'active': 'true', 'limit': 50}),
                 ("https://strapi-matic.poly.market/markets", {'closed': 'false', '_limit': 100}),
@@ -151,10 +157,11 @@ class MarketFetcher:
                             
                             if items:
                                 logger.info("gamma_api_endpoint_success", url=url[:50], count=len(items))
-                                # Log a sample
+                                # Log sample with slug info
                                 sample = items[0]
                                 logger.warning("gamma_sample", 
-                                    keys=str(list(sample.keys())[:8]),
+                                    keys=str(list(sample.keys())[:10]),
+                                    slug=str(sample.get('slug', sample.get('market_slug', '')))[:50],
                                     q=str(sample.get('question', sample.get('title', '')))[:60]
                                 )
                                 limiter.reset_backoff()
@@ -177,14 +184,21 @@ class MarketFetcher:
         
         # Check if these are events (with nested markets) or direct markets
         if items and 'markets' in items[0]:
-            # Events format - flatten
+            # Events format - flatten and propagate event slug
             for event in items:
+                event_slug = event.get('slug', '')
                 for market in event.get('markets', []):
                     market['event_title'] = event.get('title', '')
+                    market['event_slug'] = event_slug  # Propagate event slug for BTC 5M detection
                     markets.append(market)
         else:
             # Direct markets format
             markets = items
+        
+        # Debug: Log slug distribution
+        slugs_with_btc = [m.get('slug', m.get('event_slug', ''))[:40] for m in markets if 'btc' in str(m.get('slug', m.get('event_slug', ''))).lower()][:5]
+        if slugs_with_btc:
+            logger.warning("DEBUG_btc_slugs", samples=str(slugs_with_btc))
         
         # Filter for BTC 5-minute markets
         btc_5m_markets = []
@@ -218,7 +232,8 @@ class MarketFetcher:
             if markets:
                 sample = markets[0]
                 logger.warning("DEBUG_sample_market", 
-                    keys=str(list(sample.keys())[:10]),
+                    keys=str(list(sample.keys())[:12]),
+                    slug=str(sample.get('slug', sample.get('market_slug', sample.get('condition_id', ''))))[:60],
                     question=str(sample.get('question', ''))[:80],
                     title=str(sample.get('title', ''))[:80]
                 )
@@ -377,12 +392,25 @@ class MarketFetcher:
         """
         Check if market is a 5-minute BTC market.
         
-        Criteria:
-        - Question/title contains "BTC" or "Bitcoin"  
-        - Duration is 5 minutes (or short-term price prediction)
-        - Still active (not closed/resolved)
+        Polymarket 5M BTC markets use format:
+        - Slug: btc-updown-5m-{timestamp}
+        - URL: /event/btc-updown-5m-{timestamp}
+        - Markets: "Up" vs "Down" binary outcomes
         """
-        # Combine all text fields for matching
+        # Check slug first (most reliable - format: btc-updown-5m-XXXXXXXXXX)
+        slug = market.get('slug', '')
+        market_slug = market.get('market_slug', '')
+        event_slug = market.get('event_slug', '')
+        
+        if any('btc-updown-5m' in s.lower() for s in [slug, market_slug, event_slug] if s):
+            # Verify not closed
+            if market.get('closed', False) or market.get('resolved', False):
+                return False
+            if market.get('active') == False:
+                return False
+            return True
+        
+        # Fallback: text-based matching
         question = market.get('question', '')
         title = market.get('title', '')
         event_title = market.get('event_title', '')
@@ -395,7 +423,7 @@ class MarketFetcher:
             return False
         
         # Check if 5-minute market (flexible matching)
-        time_patterns = ['5 MINUTE', '5M', '5-MINUTE', '5MIN', '5-MIN', 'FIVE MINUTE']
+        time_patterns = ['5 MINUTE', '5M', '5-MINUTE', '5MIN', '5-MIN', 'FIVE MINUTE', 'UP/DOWN', 'UPDOWN']
         if not any(term in all_text for term in time_patterns):
             return False
         
@@ -403,11 +431,9 @@ class MarketFetcher:
         if market.get('closed', False) or market.get('resolved', False):
             return False
         
-        # Check active flag if present
         if market.get('active') == False:
             return False
         
-        # Don't filter by time for now - let's find markets first
         return True
     
     def _extract_baseline_price(self, question: str) -> Optional[float]:
