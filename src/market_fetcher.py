@@ -191,6 +191,12 @@ class MarketFetcher:
             elif isinstance(result, list):
                 markets = result
             
+            # Debug: Log sample market questions to understand format
+            btc_related = [m for m in markets if 'btc' in m.get('question', '').lower() or 'bitcoin' in m.get('question', '').lower()]
+            if btc_related:
+                sample_questions = [m.get('question', '')[:80] for m in btc_related[:5]]
+                logger.info("btc_markets_found", count=len(btc_related), samples=sample_questions)
+            
             # Filter and parse
             btc_5m_markets = []
             for market in markets:
