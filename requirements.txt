@@ -30,3 +30,9 @@ aiohttp>=3.9.0  # Async HTTP for faster API calls
 
 # Numerical computing (for indicators)
 numpy>=1.24.0
+
+# Telegram (optional alerts)
+python-telegram-bot>=20.0
+
+# System monitoring
+psutil>=5.9.0
