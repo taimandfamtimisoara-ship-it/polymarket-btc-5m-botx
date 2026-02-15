@@ -36,9 +36,10 @@ class BTCPriceFeed:
         self.price_update_latency_ms: Optional[float] = None
         self.latency_history: deque = deque(maxlen=100)  # Track last 100 updates
         self.update_count = 0
+        self._last_source: str = "unknown"  # Track which API provided last price
         
     async def connect(self):
-        """Connect to price feed. Try Binance WebSocket first, fallback to REST API."""
+        """Connect to price feed. Try Binance WebSocket first, fallback to REST APIs."""
         # Try Binance WebSocket first
         try:
             url = "wss://stream.binance.com:9443/ws/btcusdt@ticker"
@@ -51,46 +52,80 @@ class BTCPriceFeed:
         except Exception as e:
             logger.warning("binance_ws_failed", error=str(e))
         
-        # Fallback to REST API polling (CoinGecko)
-        logger.info("price_feed_using_rest_fallback", source="coingecko")
+        # Fallback to REST API polling (Binance REST -> Bybit -> CoinGecko)
+        logger.info("price_feed_using_rest_fallback")
         self._use_rest_fallback = True
         self.is_connected = True
         asyncio.create_task(self._poll_rest_api())
     
     async def _poll_rest_api(self):
-        """Fallback: Poll REST API for price updates."""
+        """Fallback: Poll REST APIs for price updates. Binance -> Bybit -> CoinGecko."""
         async with aiohttp.ClientSession() as session:
             while self.is_connected:
-                try:
-                    # CoinGecko free API (no key needed)
-                    url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            price = float(data['bitcoin']['usd'])
-                            
-                            old_price = self.current_price
-                            self.current_price = price
-                            self.last_update = datetime.now()
-                            self.price_history.append(price)
-                            self.update_count += 1
-                            
-                            change_pct = ((price - old_price) / old_price * 100) if old_price else 0
-                            
-                            for callback in self.callbacks:
-                                try:
-                                    await callback(price, change_pct)
-                                except Exception as e:
-                                    logger.error("callback_failed", error=str(e))
-                            
-                            logger.debug("rest_price_update", price=price)
-                        else:
-                            logger.warning("rest_api_error", status=resp.status)
-                except Exception as e:
-                    logger.error("rest_poll_error", error=str(e))
+                price = await self._fetch_price_from_apis(session)
                 
-                # Poll every 2 seconds (CoinGecko rate limit friendly)
-                await asyncio.sleep(2)
+                if price:
+                    old_price = self.current_price
+                    self.current_price = price
+                    self.last_update = datetime.now()
+                    self.price_history.append(price)
+                    self.update_count += 1
+                    
+                    change_pct = ((price - old_price) / old_price * 100) if old_price else 0
+                    
+                    for callback in self.callbacks:
+                        try:
+                            await callback(price, change_pct)
+                        except Exception as e:
+                            logger.error("callback_failed", error=str(e))
+                    
+                    logger.debug("rest_price_update", price=price, source=self._last_source)
+                
+                # Poll every 1 second (Binance REST allows 1200/min)
+                await asyncio.sleep(1)
+    
+    async def _fetch_price_from_apis(self, session: aiohttp.ClientSession) -> Optional[float]:
+        """Try multiple APIs in order: Binance REST -> Bybit -> CoinGecko."""
+        
+        # 1. Binance REST (fastest, 1200 req/min)
+        try:
+            url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self._last_source = "binance_rest"
+                    return float(data['price'])
+                logger.warning("binance_rest_error", status=resp.status)
+        except Exception as e:
+            logger.warning("binance_rest_failed", error=str(e))
+        
+        # 2. Bybit REST (backup, 120 req/min)
+        try:
+            url = "https://api.bybit.com/v5/market/tickers?category=spot&symbol=BTCUSDT"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get('result', {}).get('list'):
+                        self._last_source = "bybit_rest"
+                        return float(data['result']['list'][0]['lastPrice'])
+                logger.warning("bybit_rest_error", status=resp.status)
+        except Exception as e:
+            logger.warning("bybit_rest_failed", error=str(e))
+        
+        # 3. CoinGecko (last resort, aggressive rate limits)
+        try:
+            url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self._last_source = "coingecko"
+                    return float(data['bitcoin']['usd'])
+                logger.warning("coingecko_error", status=resp.status)
+        except Exception as e:
+            logger.warning("coingecko_failed", error=str(e))
+        
+        logger.error("all_price_apis_failed")
+        return None
     
     async def _listen(self):
         """Listen for price updates."""
