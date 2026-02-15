@@ -85,34 +85,49 @@ class BTCPriceFeed:
                 await asyncio.sleep(1)
     
     async def _fetch_price_from_apis(self, session: aiohttp.ClientSession) -> Optional[float]:
-        """Try multiple APIs in order: Binance REST -> Bybit -> CoinGecko."""
+        """Try multiple APIs. US-friendly APIs first (Kraken, Coinbase)."""
         
-        # 1. Binance REST (fastest, 1200 req/min)
+        # 1. Kraken REST (US-based, no geo-blocking, very reliable)
         try:
-            url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
+            url = "https://api.kraken.com/0/public/Ticker?pair=XBTUSD"
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    self._last_source = "binance_rest"
-                    return float(data['price'])
-                logger.warning("binance_rest_error", status=resp.status)
+                    if not data.get('error') and data.get('result', {}).get('XXBTZUSD'):
+                        self._last_source = "kraken"
+                        # Kraken returns 'c' array where [0] is last trade price
+                        return float(data['result']['XXBTZUSD']['c'][0])
+                logger.warning("kraken_error", status=resp.status)
         except Exception as e:
-            logger.warning("binance_rest_failed", error=str(e))
+            logger.warning("kraken_failed", error=str(e))
         
-        # 2. Bybit REST (backup, 120 req/min)
+        # 2. Coinbase REST (US-based, no geo-blocking)
         try:
-            url = "https://api.bybit.com/v5/market/tickers?category=spot&symbol=BTCUSDT"
+            url = "https://api.coinbase.com/v2/prices/BTC-USD/spot"
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    if data.get('result', {}).get('list'):
-                        self._last_source = "bybit_rest"
-                        return float(data['result']['list'][0]['lastPrice'])
-                logger.warning("bybit_rest_error", status=resp.status)
+                    if data.get('data', {}).get('amount'):
+                        self._last_source = "coinbase"
+                        return float(data['data']['amount'])
+                logger.warning("coinbase_error", status=resp.status)
         except Exception as e:
-            logger.warning("bybit_rest_failed", error=str(e))
+            logger.warning("coinbase_failed", error=str(e))
         
-        # 3. CoinGecko (last resort, aggressive rate limits)
+        # 3. Gemini REST (US-based, another backup)
+        try:
+            url = "https://api.gemini.com/v1/pubticker/btcusd"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get('last'):
+                        self._last_source = "gemini"
+                        return float(data['last'])
+                logger.warning("gemini_error", status=resp.status)
+        except Exception as e:
+            logger.warning("gemini_failed", error=str(e))
+        
+        # 4. CoinGecko (last resort)
         try:
             url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
