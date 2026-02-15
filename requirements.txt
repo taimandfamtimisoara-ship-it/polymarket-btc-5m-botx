@@ -21,6 +21,12 @@ python-multipart
 
 # Environment
 python-dotenv>=1.0.0
+pydantic-settings>=2.0.0
 
 # Utils
 aiofiles
+requests>=2.31.0
+aiohttp>=3.9.0  # Async HTTP for faster API calls
+
+# Numerical computing (for indicators)
+numpy>=1.24.0

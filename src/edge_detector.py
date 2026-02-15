@@ -3,6 +3,7 @@ import structlog
 from typing import Optional, Dict, List
 from datetime import datetime
 from dataclasses import dataclass
+from indicators import momentum_indicators, IndicatorSignals
 
 logger = structlog.get_logger()
 
@@ -19,11 +20,15 @@ class Edge:
     market_no_price: float  # Polymarket NO price
     confidence: float  # 0-1, how confident we are
     detected_at: datetime
+    indicators: Optional[IndicatorSignals] = None  # Momentum indicators
     
     def __str__(self):
-        return (f"Edge: {self.direction} @ {self.edge_pct:.2f}% "
+        base = (f"Edge: {self.direction} @ {self.edge_pct:.2f}% "
                 f"(BTC: ${self.current_price:,.0f}, "
                 f"Market: Y={self.market_yes_price:.3f} N={self.market_no_price:.3f})")
+        if self.indicators:
+            base += f" | {self.indicators}"
+        return base
 
 
 class EdgeDetector:
@@ -49,7 +54,8 @@ class EdgeDetector:
         market_yes_price: float,
         market_no_price: float,
         market_question: str,
-        market_id: str
+        market_id: str,
+        price_history: Optional[List[float]] = None
     ) -> Optional[Edge]:
         """
         Calculate edge for a 5-minute BTC market.
@@ -77,7 +83,12 @@ class EdgeDetector:
         # 3. Calculate edge
         edge_pct = real_movement_pct - market_implied_up_pct
         
-        # 4. Determine direction
+        # 4. Calculate momentum indicators (if price history available)
+        indicators = None
+        if price_history and len(price_history) >= 15:  # Minimum for RSI
+            indicators = momentum_indicators.get_signals(price_history)
+        
+        # 5. Determine direction
         if edge_pct > self.min_edge_pct:
             # Real price moved UP more than market expects → BET YES
             direction = "YES"
@@ -93,16 +104,30 @@ class EdgeDetector:
             # No edge
             return None
         
-        # Log detection
-        logger.info(
-            "edge_detected",
-            direction=direction,
-            edge_pct=round(edge_pct, 2),
-            real_move=round(real_movement_pct, 3),
-            market_implied=round(market_implied_up_pct, 3),
-            btc_price=round(current_price, 2),
-            yes_price=round(market_yes_price, 3)
-        )
+        # 6. Adjust confidence based on indicators
+        if indicators:
+            confidence = momentum_indicators.boost_confidence(confidence, direction, indicators)
+        
+        # Log detection with indicators
+        log_data = {
+            "direction": direction,
+            "edge_pct": round(edge_pct, 2),
+            "confidence": round(confidence, 2),
+            "real_move": round(real_movement_pct, 3),
+            "market_implied": round(market_implied_up_pct, 3),
+            "btc_price": round(current_price, 2),
+            "yes_price": round(market_yes_price, 3)
+        }
+        
+        if indicators:
+            log_data.update({
+                "rsi": round(indicators.rsi, 1) if indicators.rsi else None,
+                "rsi_signal": indicators.rsi_signal,
+                "macd_trend": indicators.macd_trend,
+                "indicator_alignment": round(indicators.alignment_score, 2)
+            })
+        
+        logger.info("edge_detected", **log_data)
         
         return Edge(
             market_id=market_id,
@@ -113,13 +138,15 @@ class EdgeDetector:
             market_yes_price=market_yes_price,
             market_no_price=market_no_price,
             confidence=confidence,
-            detected_at=datetime.now()
+            detected_at=datetime.now(),
+            indicators=indicators
         )
     
     def scan_markets(
         self,
         current_price: float,
-        markets: List[Dict]
+        markets: List[Dict],
+        price_history: Optional[List[float]] = None
     ) -> List[Edge]:
         """
         Scan all active 5-minute markets for edges.
@@ -140,7 +167,8 @@ class EdgeDetector:
                 market_yes_price=market['yes_price'],
                 market_no_price=market['no_price'],
                 market_question=market['question'],
-                market_id=market['id']
+                market_id=market['id'],
+                price_history=price_history
             )
             
             if edge:
