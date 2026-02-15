@@ -133,15 +133,14 @@ class MarketFetcher:
             limiter = get_rate_limiter()
             await limiter.acquire_market()
             
-            # Gamma API endpoint for markets
-            url = f"{self.GAMMA_API_BASE}/markets"
+            # Gamma API endpoint - try events endpoint which has better data
+            url = f"{self.GAMMA_API_BASE}/events"
             
-            # Add query parameters for filtering
+            # Simplified params - Gamma API is picky
             params = {
-                'closed': 'false',  # Only active markets
-                'limit': 100,  # Get recent markets
-                'order': 'created_at',
-                'ascending': 'false'
+                'closed': 'false',
+                'active': 'true',
+                'limit': 50
             }
             
             session = await get_http_session()
@@ -152,12 +151,36 @@ class MarketFetcher:
                     logger.warning("gamma_api_rate_limited")
                     return []
                 
-                response.raise_for_status()
+                # Log detailed error for non-200
+                if response.status != 200:
+                    text = await response.text()
+                    logger.warning("gamma_api_http_error", status=response.status, body=text[:200])
+                    return []
+                
                 limiter.reset_backoff()  # Success - reset backoff
                 
                 data = await response.json()
             
-            markets = data if isinstance(data, list) else data.get('data', [])
+            # Events API returns events with nested markets
+            events = data if isinstance(data, list) else data.get('data', [])
+            
+            # Extract markets from events and flatten
+            markets = []
+            for event in events:
+                # Events have 'markets' array
+                event_markets = event.get('markets', [])
+                for market in event_markets:
+                    # Add event title for context
+                    market['event_title'] = event.get('title', '')
+                    markets.append(market)
+            
+            # Log sample to debug
+            if markets:
+                sample = markets[0]
+                logger.warning("gamma_market_sample", 
+                    question=str(sample.get('question', ''))[:80],
+                    event=str(sample.get('event_title', ''))[:50]
+                )
             
             # Filter for BTC 5-minute markets
             btc_5m_markets = []
@@ -165,7 +188,7 @@ class MarketFetcher:
                 if self._is_btc_5m_market(market):
                     btc_5m_markets.append(market)
             
-            logger.info("gamma_api_success", total=len(markets), btc_5m=len(btc_5m_markets))
+            logger.info("gamma_api_success", total_events=len(events), total_markets=len(markets), btc_5m=len(btc_5m_markets))
             return btc_5m_markets
             
         except Exception as e:
@@ -355,34 +378,36 @@ class MarketFetcher:
         Check if market is a 5-minute BTC market.
         
         Criteria:
-        - Question contains "BTC" or "Bitcoin"
-        - Duration is 5 minutes
+        - Question/title contains "BTC" or "Bitcoin"  
+        - Duration is 5 minutes (or short-term price prediction)
         - Still active (not closed/resolved)
         """
-        question = market.get('question', '').upper()
+        # Combine all text fields for matching
+        question = market.get('question', '')
+        title = market.get('title', '')
+        event_title = market.get('event_title', '')
+        description = market.get('description', '')
+        
+        all_text = f"{question} {title} {event_title} {description}".upper()
         
         # Check if BTC-related
-        if not any(term in question for term in ['BTC', 'BITCOIN']):
+        if not any(term in all_text for term in ['BTC', 'BITCOIN']):
             return False
         
-        # Check if 5-minute market
-        if not any(term in question for term in ['5 MINUTE', '5M', '5-MINUTE', '5MIN']):
+        # Check if 5-minute market (flexible matching)
+        time_patterns = ['5 MINUTE', '5M', '5-MINUTE', '5MIN', '5-MIN', 'FIVE MINUTE']
+        if not any(term in all_text for term in time_patterns):
             return False
         
         # Check if active
         if market.get('closed', False) or market.get('resolved', False):
             return False
         
-        # Check if recent (created within last 2 hours for safety)
-        created_at = market.get('start_date_iso') or market.get('created_at')
-        if created_at:
-            try:
-                created = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                if datetime.now(created.tzinfo) - created > timedelta(hours=2):
-                    return False
-            except Exception as e:
-                logger.debug("date_parse_error", created_at=created_at, error=str(e))
+        # Check active flag if present
+        if market.get('active') == False:
+            return False
         
+        # Don't filter by time for now - let's find markets first
         return True
     
     def _extract_baseline_price(self, question: str) -> Optional[float]:
