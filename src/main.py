@@ -1,5 +1,6 @@
 """Main orchestrator - BTC 5-minute trading bot."""
 import asyncio
+import os
 import structlog
 from datetime import datetime
 from py_clob_client.client import ClobClient
@@ -585,13 +586,31 @@ class BTCBot:
         return stats
 
 
+async def start_dashboard():
+    """Start the dashboard API server."""
+    import uvicorn
+    config = uvicorn.Config(
+        dashboard_api.app,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8000)),
+        log_level="warning"
+    )
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
 async def main():
     """Entry point."""
     bot = BTCBot()
     
     try:
         await bot.initialize()
-        await bot.run()
+        
+        # Run bot and dashboard concurrently
+        await asyncio.gather(
+            bot.run(),
+            start_dashboard()
+        )
     except Exception as e:
         logger.error("bot_failed", error=str(e))
         return 1
